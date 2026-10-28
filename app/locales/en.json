@@ -336,7 +336,6 @@
       "ocContextCap": "OpenCode compacts its conversation by itself; the app sets no size for it.",
       "ocSavings": "OpenCode gets no output caps or step budget from the app.",
       "ocBackup": "OpenCode keeps its own provider logins; there is no second account to switch to.",
-      "ocWorkers": "Workers are not followed for OpenCode: the app only watches its terminal.",
       "ocCost": "OpenCode reports no token counts to the app.",
       "ocProjectFiles": "Agent Office writes no project files for OpenCode.",
       "claudeOnlyMcp": "Claude Code only: servers added in Agent Office and their tokens are not given to Antigravity, Command Code or OpenCode.",

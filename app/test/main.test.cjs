@@ -3980,6 +3980,45 @@ test('OpenCode sekmesi gözlemlenir: agy-watch engine opencode ("esc interrupt" 
   assert.deepEqual(Zm.wakeOptions({ oc: true }, false), { resume: true });
 });
 
+test('OpenCode işçileri (v3.55): görev partı çalışana dönüşür; veritabanı olayları başlatır, bitirir ve açıklar', () => {
+  const AWm = require('../src/agy-watch.js');
+  // OpenCode 2.1.2 read-only read (src/agy-watch.js ocTaskOf): the top-level session's task-tool part
+  assert.equal(AWm.ocDataDir('/h'), '/h/.local/share/opencode');
+  assert.equal(AWm.ocDataDir('/h', '/xd'), '/xd/opencode');
+  const base = { type: 'tool', tool: 'task', callID: 'call_1', state: { input: { subagent_type: 'explore', description: 'bak' }, metadata: { sessionId: 'ses_a', title: 'all pages' }, time: { start: 5000 } } };
+  const running = { ...base, state: { ...base.state, status: 'running' } };
+  const finished = { ...base, state: { ...base.state, status: 'completed', time: { start: 5000, end: 7000 } } };
+  assert.deepEqual(AWm.ocTaskOf(running), { id: 'ses_a', type: 'explore', description: 'all pages', spawnAt: 5000 });
+  assert.deepEqual(AWm.ocTaskOf(finished), { id: 'ses_a', type: 'explore', description: 'all pages', spawnAt: 5000, doneAt: 7000, isOk: true });
+  assert.equal(AWm.ocTaskOf({ type: 'tool', tool: 'git', state: {} }), null);
+  assert.equal(AWm.ocTaskOf({ type: 'message', tool: 'task' }), null);
+  assert.equal(AWm.ocTaskOf({ type: 'tool', tool: 'task', state: { status: 'running', metadata: {} } }), null); // callID fallback missing
+  assert.deepEqual(AWm.ocTaskOf({ type: 'tool', tool: 'task', callID: 'c9', state: { status: 'error' } }),
+    { id: 'call-c9', type: 'subagent', description: 'subagent', doneAt: 0, isOk: false });
+  // response events: a row that is already finished gives start + stop; each stop is emitted only once
+  const d = new Set();
+  const ev = AWm.ocSpoolEvents([{ at: 5000, data: JSON.stringify(running) }, { at: 5000, data: JSON.stringify(finished) }], d);
+  assert.deepEqual(ev.map((e) => e.t), ['subagent_start', 'subagent_stop']);
+  assert.deepEqual(AWm.ocSpoolEvents([{ at: 5000, data: JSON.stringify(finished) }], d).map((e) => e.t), ['subagent_start']);
+  // the worker walks into the office with the exact epochs (spool() from the database, idempotent)
+  const w = AWm.createAgyWatch(1000, { engine: 'opencode', label: 'OpenCode' });
+  w.spool(ev, 6000);
+  const s = w.session('p', 'oc-x', 6100);
+  assert.deepEqual(s.workers.map((x) => ({ id: x.id, type: x.type, description: x.description, spawnAt: x.spawnAt, doneAt: x.doneAt, isOk: x.isOk })),
+    [{ id: 'ses_a', type: 'explore', description: 'all pages', spawnAt: 5000, doneAt: 7000, isOk: true }]);
+});
+
+test('OpenCode işçileri (v3.55): agySessions opencode.db yi yalnız okur; iki sekme aynı çalışanı atlamaz', () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  assert.match(src, /require\('node:sqlite'\)/);
+  assert.match(src, /readOnly: true/);
+  assert.match(src, /ocDataDir\(home, process\.env\.XDG_DATA_HOME\)/);
+  assert.match(src, /AND \(\? <= 0 OR p\.time_created < \?\)/);
+  assert.match(src, /ocPoll\(home, me, next, now\)/);
+  assert.match(src, /startAt: startedAt, ocDone: new Set\(\)/);
+});
+
 // --- opt-in project files (contract v3.38, src/project-files.js)
 {
   const fs = require('fs');
