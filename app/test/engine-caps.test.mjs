@@ -1,4 +1,4 @@
-// Engine capabilities (contract v3.36): node --test app/test/engine-caps.test.mjs
+// Engine capabilities (contract v3.36, v3.40, v3.55): node --test app/test/engine-caps.test.mjs
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -89,12 +89,13 @@ test('OpenCode (contract v3.40): observed only; boss model via -m, no files, no 
   const tr = JSON.parse(readFileSync(new URL('../locales/tr.json', import.meta.url), 'utf8'))
   for (const f of ['account', 'login', 'bossModel', 'approvals']) assert.equal(cap('opencode', f).ok, true, f)
   for (const projectFiles of [false, true]) {
-    for (const f of ['manager', 'agentModel', 'contextCap', 'savings', 'backup', 'workers', 'cost', 'projectFiles']) {
+    for (const f of ['manager', 'agentModel', 'contextCap', 'savings', 'backup', 'cost', 'projectFiles']) {
       const c = cap('opencode', f, { projectFiles })
       assert.equal(c.ok, false, f); assert.match(c.reason, /^oc/)
       assert.equal(typeof en.sidebar.na[c.reason], 'string'); assert.equal(typeof tr.sidebar.na[c.reason], 'string')
     }
   }
+  assert.equal(cap('opencode', 'workers').ok, true) // v3.55: its subagents come from its own database (read-only)
   assert.notDeepEqual(caps('opencode'), caps('claude'))
   assert.deepEqual(bossModelChoices('opencode').map((c) => c.value), P.BOSS_MODELS_BY_ENGINE.opencode)
   assert.ok(bossModelChoices('opencode').every((c) => c.value.includes('/'))) // provider/model

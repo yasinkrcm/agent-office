@@ -335,7 +335,6 @@
       "ocContextCap": "OpenCode konuşmasını kendisi sıkıştırır; uygulama ona boyut ayarlamaz.",
       "ocSavings": "OpenCode uygulamadan çıktı sınırı ya da adım bütçesi almaz.",
       "ocBackup": "OpenCode sağlayıcı girişlerini kendisi tutar; geçilecek ikinci hesap yok.",
-      "ocWorkers": "OpenCode için çalışanlar izlenmez: uygulama yalnızca terminalini izler.",
       "ocCost": "OpenCode uygulamaya token sayısı bildirmez.",
       "ocProjectFiles": "Agent Office, OpenCode için proje dosyası yazmaz.",
       "claudeOnlyMcp": "Yalnız Claude Code: Agent Office'te eklenen sunucular ve tokenları Antigravity, Command Code ya da OpenCode'a verilmez.",

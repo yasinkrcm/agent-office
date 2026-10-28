@@ -19,7 +19,8 @@
 // the office, the agent panel and attention.js need no Antigravity case.
 // Command Code tabs (contract v3.25) use the same watcher (`engine: 'commandcode'`) and, read-only, the newest
 // session file of the tab's folder in ~/.commandcode/projects/<slug>/ (cmdTranscriptPath). OpenCode tabs (v3.40) use it
-// with `engine: 'opencode'` and no transcript (its sessions are in a database): terminal and keys only.
+// with `engine: 'opencode'` and no transcript (its sessions are in a database); their subagents (v3.55) come from
+// read-only `part` rows of its own opencode.db (ocDataDir, ocTaskOf below), fed through spool() by main.js.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -195,15 +196,17 @@ function createAgyWatch(startAt = Date.now(), { engine = 'agy', label = 'Antigra
     /**
      * Events of the tab's Command Code mod spool (contract v3.37, cmd-spool.js parseSpoolLine): subagent_start/
      * progress/stop make workers (done ones go to the day's log and leave after WORKER_FORGET_MS); permission names
-     * the tool of an open dialog (or opens one); turn_end and subagent_stop add tokens.
-     * @param {{ t: string, at: number, id?: string, type?: string, tool?: string, tokens?: number, usage?: Record<string, number> }[]} events
+     * the tool of an open dialog (or opens one); turn_end and subagent_stop add tokens. description (v3.55, the
+     * database events): the subagent's task when the source knows it.
+     * @param {{ t: string, at: number, id?: string, type?: string, description?: string, tool?: string, tokens?: number, usage?: Record<string, number> }[]} events
      */
     spool(events, now = Date.now()) {
       if (endedAt) return;
       for (const e of events || []) {
         const at = e.at || now;
         if (e.t === 'subagent_start' && e.id && !workers.some((w) => w.id === e.id)) {
-          workers.push({ id: e.id, type: e.type || 'subagent', description: e.type || 'subagent', spawnAt: at, toolCount: 0 });
+          // description when the source knows the task (opencode.db, v3.55); the spool's own events name the agent
+          workers.push({ id: e.id, type: e.type || 'subagent', description: e.description || e.type || 'subagent', spawnAt: at, toolCount: 0 });
           if (workers.length > 50) workers.splice(0, workers.length - 50);
           if (!busy) startTurn(now);
           lastSign = now;
@@ -329,6 +332,69 @@ function cmdTranscriptPath(home, dir) {
   return best;
 }
 
+// --- OpenCode's session database (read-only, contract v3.55): <XDG_DATA_HOME or ~/.local/share>/opencode/opencode.db.
+// A top-level session's `part` rows with {"type":"tool","tool":"task"} describe one subagent run each (recovered from
+// opencode 2.1.2's own storage): state.status is 'pending' | 'running' | 'completed' | 'error', state.input carries
+// { description, prompt, subagent_type }, state.metadata carries { parentSessionId, sessionId, title } and state.time
+// ({ start, end } as ms epochs). ocDataDir mirrors oc-auth.js's opencode folder rule; nothing is written and no value
+// of the machine's files is sent anywhere by the query itself.
+/** The folder OpenCode keeps its data in (its opencode.db lives right here). @param {string} home @param {string} [xdgData] */
+const ocDataDir = (home, xdgData) =>
+  path.join(xdgData && path.isAbsolute(xdgData) ? xdgData : path.join(home, '.local', 'share'), 'opencode');
+
+/**
+ * One task-tool part record (parsed part.data) → one worker, or null.
+ * doneAt/isOk only when state.status says the run ended ('completed' | 'error').
+ * @param {any} d
+ */
+function ocTaskOf(d) {
+  if (!d || typeof d !== 'object' || d.type !== 'tool' || d.tool !== 'task') return null;
+  const state = d.state || {};
+  const meta = state.metadata || {};
+  const input = state.input || {};
+  const time = state.time || {};
+  const id = typeof meta.sessionId === 'string' && meta.sessionId ? meta.sessionId
+    : typeof d.callID === 'string' && d.callID ? `call-${d.callID}` : null;
+  if (!id) return null;
+  const spawnAt = Number(time.start) > 0 ? Number(time.start) : 0;
+  const done = state.status === 'completed' || state.status === 'error';
+  const type = typeof input.subagent_type === 'string' && input.subagent_type ? input.subagent_type : 'subagent';
+  const description = [meta.title, input.description].find((v) => typeof v === 'string' && v) || type;
+  const t = { id, type, description };
+  if (spawnAt) t.spawnAt = spawnAt;
+  if (done) {
+    t.doneAt = Number(time.end) > 0 ? Number(time.end) : 0;
+    t.isOk = state.status === 'completed';
+  }
+  return t;
+}
+
+/**
+ * Parses the new task-tool part rows of the tab's poll into spool events (description + exact spawn/done epochs, v3.55).
+ * events, always in one pass: a row may enter already finished (its start then stop, back to back). A row read again in
+ * another poll keeps only its stop one-time (done); starts are idempotent by id inside the call and harmless again.
+ * @param {{ at: number, data: string }[]} rows @param {Set<string>} done
+ */
+function ocSpoolEvents(rows, done) {
+  const events = [];
+  const saw = new Set();
+  for (const r of rows || []) {
+    let d;
+    try { d = JSON.parse(r.data); } catch { continue; }
+    const t = ocTaskOf(d);
+    if (!t) continue;
+    if (!saw.has(t.id)) {
+      saw.add(t.id);
+      events.push({ t: 'subagent_start', id: t.id, type: t.type, description: t.description, at: t.spawnAt || r.at });
+    }
+    if (t.doneAt && done && !done.has(t.id)) {
+      done.add(t.id);
+      events.push({ t: 'subagent_stop', id: t.id, at: t.doneAt });
+    }
+  }
+  return events;
+}
+
 /**
  * Reads what was appended to a transcript since `from` (a cursor { file, size, prompts }); returns the new cursor, or
  * null when the file is missing. Only the new bytes are read. promptRe: what a prompt record looks like.
@@ -352,4 +418,4 @@ function readTranscript(file, from, promptRe = /"USER_INPUT"/g) {
   return { file, size: st.size, prompts };
 }
 
-module.exports = { createAgyWatch, dayKey, plainText, agyTranscriptPath, readTranscript, cmdProjectDir, hasCmdSession, cmdTranscriptPath, CMD_PROMPT_RE, BUSY_RE, OC_BUSY_RE, ASK_RE, QUIET_MS, SUBMIT_GRACE_MS };
+module.exports = { createAgyWatch, dayKey, plainText, agyTranscriptPath, readTranscript, cmdProjectDir, hasCmdSession, cmdTranscriptPath, CMD_PROMPT_RE, BUSY_RE, OC_BUSY_RE, ASK_RE, QUIET_MS, SUBMIT_GRACE_MS, ocDataDir, ocTaskOf, ocSpoolEvents };

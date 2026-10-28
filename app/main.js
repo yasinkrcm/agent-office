@@ -1274,12 +1274,54 @@ function agyOwnDir(id) {
   const same = P.ptyIdsOf(r.project).filter((pid) => P.resolvePty(state, pid)?.dir === r.dir);
   return same.length === 1 ? r.dir : null;
 }
+// OpenCode's subagents (contract v3.55): the task-tool part rows of the tab's folder, read read-only from OpenCode's
+// own database (~/.local/share/opencode/opencode.db, src/agy-watch.js ocDataDir + ocSpoolEvents). One read-only
+// connection serves every OpenCode tab; it is attempted once per run (a failure, e.g. `node:sqlite` missing or the
+// file unreadable, leaves the tabs worker-less silently) and closed when the last OpenCode tab goes. Ownership keeps
+// two tabs of one folder from announcing the same worker (rows go to the newest tab started at or before the row).
+let ocOpened = false;
+let ocDb = null;
+let ocSql = null;
+const OC_WORKER_SQL =
+  `SELECT p.time_created AS at, p.data AS data FROM part p JOIN session s ON p.session_id = s.id` +
+  ` WHERE s.directory = ? AND p.time_created >= ? AND (? <= 0 OR p.time_created < ?) AND p.data LIKE '%"tool":"task"%'` +
+  ` ORDER BY p.time_created ASC LIMIT 200`;
+/** Feeds one OpenCode tab's watcher with its folder's subagent events (me.at − 60 s ≤ rows < next.at when next exists). */
+function ocPoll(home, me, next, now) {
+  if (!ocOpened) {
+    ocOpened = true;
+    try {
+      const { DatabaseSync } = require('node:sqlite');
+      ocDb = new DatabaseSync(path.join(AW.ocDataDir(home, process.env.XDG_DATA_HOME), 'opencode.db'), { readOnly: true });
+      ocSql = ocDb.prepare(OC_WORKER_SQL);
+    } catch (e) { console.error('opencode.db:', e.message); }
+  }
+  if (!ocSql) return;
+  try {
+    const rows = ocSql.all(me.dir, me.at - 60000, next ? next.at : 0, next ? next.at : 0);
+    const events = AW.ocSpoolEvents(rows, me.w.ocDone || (me.w.ocDone = new Set()));
+    if (events.length) me.w.watch.spool(events, now);
+  } catch (e) { console.error('opencode.db:', e.message); }
+}
+/** Drops the OpenCode database connection (contract v3.55). */
+function ocClose() {
+  try { ocDb?.close(); } catch { /* already gone */ }
+  ocOpened = false;
+  ocDb = null;
+  ocSql = null;
+}
 /** Ends quiet turns, reads the transcripts, and gives readOffice the observed sessions. */
 function agySessions(now = Date.now()) {
   const day = AW.dayKey(now);
   agyEnded = agyEnded.filter((x) => x.stats?.today?.date === day);
   const out = [...agyEnded];
   const home = app.getPath('home');
+  // OpenCode tabs' ownership of their folder's subagents (contract v3.55): rows go to the newest-started opencode tab
+  // of the same folder; a tab owns the rows created after it started, until the next tab of the folder starts.
+  const oc = [...agyWatch.entries()].flatMap(([id, w]) => {
+    const r = P.resolvePty(state, id);
+    return r && isOc(r.project) && w.startAt ? [{ id, w, dir: r.dir, at: w.startAt }] : [];
+  }).sort((a, b) => a.at - b.at);
   for (const [id, w] of agyWatch) {
     const r = P.resolvePty(state, id);
     if (!r) continue;
@@ -1296,9 +1338,16 @@ function agySessions(now = Date.now()) {
       sp.cursor = got.cursor;
       if (got.events.length) w.watch.spool(got.events, now);
     }
+    const ocIndex = oc.findIndex((s) => s.id === id);
+    if (ocIndex >= 0) { // the tab's folder's subagents (v3.55): task-tool part rows of OpenCode's own database
+      const me = oc[ocIndex];
+      const next = oc.slice(ocIndex + 1).find((s) => s.dir === me.dir);
+      ocPoll(home, me, next, now);
+    }
     w.watch.tick(now);
     out.push(w.watch.session(r.project.name, w.key, now));
   }
+  if (!oc.length && ocOpened) ocClose(); // no OpenCode tab: drop the read-only database connection
   return out;
 }
 
@@ -1443,7 +1492,7 @@ function startOpenCode(id, { project, tab, dir: cwd }, { resume = false, prompt 
   activity.set(id, { at: startedAt, draft: false });
   lastSid.delete(id);
   retireAgy(id);
-  agyWatch.set(id, { watch: AW.createAgyWatch(startedAt, { engine: 'opencode', label: 'OpenCode' }), cursor: null, key: `oc-${id.replace(/[^\w-]/g, '_')}-${++agySeq}` });
+  agyWatch.set(id, { watch: AW.createAgyWatch(startedAt, { engine: 'opencode', label: 'OpenCode' }), cursor: null, key: `oc-${id.replace(/[^\w-]/g, '_')}-${++agySeq}`, startAt: startedAt, ocDone: new Set() });
   attachPty(terms, id, t, {
     onData: (d) => observedOnData(id, d),
     onExit: ({ exitCode }) => {   // killed on purpose (restart/removal): silent (the id guard)
