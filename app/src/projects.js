@@ -254,6 +254,7 @@ const BOSS_MODELS_BY_ENGINE = {
   agy: ['flash', 'pro'],
   commandcode: ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5', 'deepseek/deepseek-v4-flash'],
   opencode: ['opencode/big-pickle'], // v3.40: `-m provider/model`; OpenCode's free model, no login needed
+  codex: [], // v3.56: Auto only for now (no -m keeps Codex's own default model)
 };
 const bossModelValue = (v, engine) => ((BOSS_MODELS_BY_ENGINE[engineValue(engine) || 'claude'] || []).includes(v) ? v : null);
 // normalizeState keeps a model valid for ANY engine (switching back finds it again); only the launch args check the active engine
@@ -280,7 +281,7 @@ const bossModelArgs = (project) => {
   const v = bossModelOf(project);
   if (!v) return [];
   const e = engineValue(project?.engine);
-  return e === 'commandcode' || e === 'opencode' ? ['-m', v] : ['--model', v];
+  return e === 'commandcode' || e === 'opencode' || e === 'codex' ? ['-m', v] : ['--model', v];
 };
 
 // --- per-project subagent model (contract v3.14)
@@ -353,14 +354,15 @@ const savingsOf = (project) => savingsValue(project?.savings);
 // 'commandcode' runs Command Code's `commandcode` (contract v3.25); absent = Claude Code. Never written for Claude
 // Code. Neither engine gets anything of Claude Code's setup (account folder, plugin, status line, memory, MCP
 // config) or of the office (directory, journal, savings); the app observes both one way.
-// 'opencode' runs OpenCode's `opencode` (contract v3.40), observed the same way.
-const ENGINES = ['claude', 'agy', 'commandcode', 'opencode'];
-const engineValue = (v) => (v === 'agy' || v === 'commandcode' || v === 'opencode' ? v : null);
+// 'opencode' runs OpenCode's `opencode` (contract v3.40), observed the same way. 'codex' runs OpenAI's `codex`
+// (contract v3.56), observed the same way from its terminal and its own rollout transcripts.
+const ENGINES = ['claude', 'agy', 'commandcode', 'opencode', 'codex'];
+const engineValue = (v) => (v === 'agy' || v === 'commandcode' || v === 'opencode' || v === 'codex' ? v : null);
 const withEngine = (v) => (engineValue(v) ? { engine: v } : {});
 
 
 /**
- * value: 'agy' | 'commandcode' | 'opencode' | 'claude' | null (both: Claude Code). Same state when nothing changes.
+ * value: 'agy' | 'commandcode' | 'opencode' | 'codex' | 'claude' | null (both: Claude Code). Same state when nothing changes.
  */
 function setProjectEngine(state, id, value) {
   const p = findProject(state, id);
@@ -373,7 +375,7 @@ function setProjectEngine(state, id, value) {
   }) };
 }
 
-/** The program the project's tabs run: 'claude' | 'agy' | 'commandcode' | 'opencode'. */
+/** The program the project's tabs run: 'claude' | 'agy' | 'commandcode' | 'opencode' | 'codex'. */
 const engineOf = (project) => engineValue(project?.engine) || 'claude';
 
 // --- opt-in project files (contract v3.38, src/project-files.js)

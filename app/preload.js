@@ -78,6 +78,12 @@ contextBridge.exposeInMainWorld('agentOffice', {
     login: (mode) => ipcRenderer.invoke('oc:login', mode),
     onAuth: listen('oc:auth'),
   },
+  // v3.56: Codex's single login (CdAuth of src/cd-auth.js); the pty is 'login:cd'. login(mode): 'login' (default) or 'logout'.
+  cd: {
+    auth: (refresh) => ipcRenderer.invoke('cd:auth', refresh),   // { installed, state: 'in' | 'out' | 'missing' }
+    login: (mode) => ipcRenderer.invoke('cd:login', mode),
+    onAuth: listen('cd:auth'),
+  },
   pty: {
     write: (id, d) => ipcRenderer.send('pty:write', id, d),
     resize: (id, cols, rows) => ipcRenderer.send('pty:resize', id, cols, rows),

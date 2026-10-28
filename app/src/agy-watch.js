@@ -20,6 +20,8 @@
 // Command Code tabs (contract v3.25) use the same watcher (`engine: 'commandcode'`) and, read-only, the newest
 // session file of the tab's folder in ~/.commandcode/projects/<slug>/ (cmdTranscriptPath). OpenCode tabs (v3.40) use it
 // with `engine: 'opencode'` and no transcript (its sessions are in a database): terminal and keys only.
+// Codex tabs (v3.56) use it with `engine: 'codex'` and, read-only, the newest rollout of the folder under
+// ~/.codex/sessions/YYYY/MM/DD/ (codexTranscriptPath): the busy sign from the terminal and its own transcript.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -45,6 +47,9 @@ const ASK_RE = new RegExp([
   String.raw`\bsubagent \S+ asks to\b`,
   String.raw`\bdon'?t ask again\b`, // Command Code's permission prompt (commandcode.ai/docs/settings, v3.25)
   String.raw`\b(allow once|allow always|always allow|allow for (this|the|all) (session|conversation|future)|yes,? allow|no,? suggest changes|allow execution of|apply (this|these) changes?\?|waiting for (user |your )?(confirmation|approval))`,
+  // Codex's dialogs (v3.56, recovered from its binary's strings): Yes, and allow … / No, and tell … / No, continue without …
+  String.raw`\byes, and (allow|run|don'?t ask)\b`,
+  String.raw`\bno, (and tell|continue without)\b`,
 ].join('|'), 'i');
 // what the dialog is about: a tool name for stats.waiting.tool ('' when unknown)
 /** @type {[RegExp, string][]} */
@@ -81,10 +86,10 @@ const dayKey = (ms) => {
 /**
  * One agy tab's watcher. Feed it with output(data), input(data) and exit(); tick(now) ends quiet turns;
  * session(project) gives the office its view. engine/label: the observed CLI (v3.25: 'commandcode', 'Command Code').
- * @param {number} [startAt] @param {{ engine?: 'agy' | 'commandcode' | 'opencode', label?: string }} [o]
+ * @param {number} [startAt] @param {{ engine?: 'agy' | 'commandcode' | 'opencode' | 'codex', label?: string }} [o]
  */
 function createAgyWatch(startAt = Date.now(), { engine = 'agy', label = 'Antigravity' } = {}) {
-  const busyRe = engine === 'opencode' ? OC_BUSY_RE : BUSY_RE;
+  const busyRe = engine === 'agy' ? BUSY_RE : OC_BUSY_RE; // the spinner glyphs and the cancel hint are cli-family wide
   let busy = false;
   let turnOpen = false; // a turn that has not been counted yet
   let turnAt = 0; // when the current turn began
@@ -329,6 +334,52 @@ function cmdTranscriptPath(home, dir) {
   return best;
 }
 
+// --- Codex's rollout sessions (read-only, contract v3.56). Documented: their folder (~/.codex/sessions, `codex resume`).
+// rollout-<date>-<uid>.jsonl, append-only JSON lines: the first record is session_meta, its payload.cwd is the folder the
+// session works in; each turn starts with an event_msg record "task_started". ~/.codex/auth.json is never read.
+const CD_PROMPT_RE = /"task_started"/g;
+const cdDataDir = (home) => path.join(home, '.codex', 'sessions');
+/** Reads a rollout's first kilobyte and answers its session's working directory, or null (unreadable, no cwd). */
+function cdCwdOf(file, read = (f) => {
+  const fd = fs.openSync(f, 'r');
+  try {
+    const buf = Buffer.alloc(1024);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    return buf.toString('utf8', 0, n);
+  } finally { fs.closeSync(fd); }
+}) {
+  try {
+    const first = read(file);
+    if (!first.startsWith('{"timestamp"') || !first.includes('"type":"session_meta"')) return null;
+    const m = /"cwd":"((?:[^"\\]|\\.)*)"/.exec(first);
+    return m ? JSON.parse(`"${m[1]}"`) : null;
+  } catch { return null; }
+}
+/**
+ * The newest rollout of a folder (the one `codex resume --last` opens): codex sorts its sessions by YYYY/MM/DD
+ * folders; today's and yesterday's are checked by mtime, the newest whose session_meta says this cwd, or null.
+ * @param {string} home @param {string} dir @param {number} [now]
+ */
+function codexTranscriptPath(home, dir, now = Date.now()) {
+  const d = cdDataDir(home);
+  let best = null, at = -1;
+  for (const day of [0, 1]) {
+    const t = new Date(now - day * 86400000);
+    const folder = path.join(d, `${t.getFullYear()}`, `${String(t.getMonth() + 1).padStart(2, '0')}`, `${String(t.getDate()).padStart(2, '0')}`);
+    let names = [];
+    try { names = fs.readdirSync(folder); } catch { continue; }
+    for (const n of names) {
+      if (!/^rollout-[\w.-]+\.jsonl$/.test(n)) continue;
+      const full = path.join(folder, n);
+      let m;
+      try { m = fs.statSync(full).mtimeMs; } catch { continue; }
+      if (m <= at) continue;
+      if (cdCwdOf(full) === dir) { best = full; at = m; }
+    }
+  }
+  return best;
+}
+
 /**
  * Reads what was appended to a transcript since `from` (a cursor { file, size, prompts }); returns the new cursor, or
  * null when the file is missing. Only the new bytes are read. promptRe: what a prompt record looks like.
@@ -352,4 +403,4 @@ function readTranscript(file, from, promptRe = /"USER_INPUT"/g) {
   return { file, size: st.size, prompts };
 }
 
-module.exports = { createAgyWatch, dayKey, plainText, agyTranscriptPath, readTranscript, cmdProjectDir, hasCmdSession, cmdTranscriptPath, CMD_PROMPT_RE, BUSY_RE, OC_BUSY_RE, ASK_RE, QUIET_MS, SUBMIT_GRACE_MS };
+module.exports = { createAgyWatch, dayKey, plainText, agyTranscriptPath, readTranscript, cmdProjectDir, hasCmdSession, cmdTranscriptPath, CMD_PROMPT_RE, BUSY_RE, OC_BUSY_RE, ASK_RE, QUIET_MS, SUBMIT_GRACE_MS, CD_PROMPT_RE, cdDataDir, cdCwdOf, codexTranscriptPath };

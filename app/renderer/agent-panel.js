@@ -262,7 +262,7 @@ export function mountAgentPanel(el, { onClose, onSelect, onOpenProject, loadToda
     let html = `<div class="ap-status ${cls}"><span class="ap-dot"></span>${status}<span class="ap-dim">${t('panel.todayDelivered', { n: num(d.delivered) ?? 0 })}</span></div>`;
     if (projects.length) {
       html += `<section class="ap-sec"><div class="ap-label">${t('panel.projects')}</div><ul class="ap-projs">${projects.map((p) =>
-        `<li><span class="ap-dot ${p.isBossBusy ? 'on' : ''}" title="${p.isBossBusy ? esc(t('panel.bossOnProject')) : ''}"></span><span class="ap-pname">${esc(p.name)}${p.engine === 'agy' ? ' <span class="ap-dim">AGY</span>' : p.engine === 'commandcode' ? ' <span class="ap-dim">CMD</span>' : p.engine === 'opencode' ? ' <span class="ap-dim">OC</span>' : ''}</span><span class="ap-dim">${t('panel.projStats', { working: num(p.working) ?? 0, delivered: num(p.delivered) ?? 0 })}</span></li>`).join('')}</ul></section>`;
+        `<li><span class="ap-dot ${p.isBossBusy ? 'on' : ''}" title="${p.isBossBusy ? esc(t('panel.bossOnProject')) : ''}"></span><span class="ap-pname">${esc(p.name)}${p.engine === 'agy' ? ' <span class="ap-dim">AGY</span>' : p.engine === 'commandcode' ? ' <span class="ap-dim">CMD</span>' : p.engine === 'opencode' ? ' <span class="ap-dim">OC</span>' : p.engine === 'codex' ? ' <span class="ap-dim">CD</span>' : ''}</span><span class="ap-dim">${t('panel.projStats', { working: num(p.working) ?? 0, delivered: num(p.delivered) ?? 0 })}</span></li>`).join('')}</ul></section>`;
     }
     html += `<section class="ap-sec"><div class="ap-label">${t('panel.workingAgents')}<span class="ap-dim">${workers.length}</span></div>`;
     html += workers.length

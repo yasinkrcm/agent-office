@@ -219,8 +219,63 @@ function ocEnv(base, platform = process.platform) {
   return out;
 }
 
+// --- Codex (contract v3.56). The same rules again: an env allowlist, nothing of Claude Code or the office. The binary
+// is `codex`. It keeps its own login (`~/.codex/auth.json`), its sessions live in ~/.codex/sessions/YYYY/MM/DD/.jsonl.
+const CD = {
+  bin: 'codex',
+  home: '.codex',
+};
+
+/**
+ * Codex's arguments for a start (codex --help): the project's boss model first (`-m <model>`), then (only when resuming)
+ * `resume --last` (the most recent recorded session, `codex resume`), and (only when resuming and a prompt is given) the
+ * prompt as resume's trailing argument; a fresh start takes the prompt as its positional argument.
+ * @param {{ resume?: boolean, prompt?: string, model?: string | null }} [o]
+ */
+function cdArgs({ resume = false, prompt = '', model = null } = {}) {
+  const p = resume && prompt ? promptArg(prompt) : '';
+  return [
+    ...(model ? ['-m', model] : []),
+    ...(resume ? ['resume', '--last'] : []),
+    ...(p ? [p] : []),
+  ];
+}
+
+/** Codex's launch line: drops any AGENT_OFFICE_* an rc file set (as AGY_COMMAND), then `codex "$@"`. */
+const CD_COMMAND = launchLine(CD.bin);
+
+// What Codex reads from the environment, passed only when the user has them: its own CODEX_* switches and OpenAI's key
+// (codex's API-key mode). Any other *_API_KEY in the user's shell stays out. The deny rule still wins: an ANTHROPIC_*
+// or CLAUDE* variable never reaches it.
+const CD_ENV_PREFIXES = ['CODEX_'];
+const CD_PROVIDER_KEYS = ['OPENAI_API_KEY'];
+
+/**
+ * The env Codex starts with: agyEnv's base allowlist (without agy's own names and families) plus Codex's own variables
+ * and OpenAI's key; the same deny rule (Claude, Anthropic, the office, MCP).
+ * @param {Record<string, string | undefined>} base @param {string} [platform]
+ * @returns {Record<string, string>}
+ */
+function cdEnv(base, platform = process.platform) {
+  const win = platform === 'win32';
+  const norm = (/** @type {string} */ n) => (win ? n.toUpperCase() : n);
+  const names = new Set([...AGY_ENV_NAMES.filter((n) => n !== 'AGY_ADC_AUTH'), ...CD_PROVIDER_KEYS, ...(win ? AGY_ENV_WINDOWS : [])].map(norm));
+  const prefixes = ['LC_', ...CD_ENV_PREFIXES];
+  /** @type {Record<string, string>} */
+  const out = {};
+  for (const [k, v] of Object.entries(base || {})) {
+    if (typeof v !== 'string' || AGY_ENV_DENY.test(k)) continue;
+    const key = norm(k);
+    if (names.has(key) || prefixes.some((p) => key.startsWith(p))) out[k] = v;
+  }
+  out.TERM = 'xterm-256color';
+  out.COLORTERM = 'truecolor';
+  return out;
+}
+
 module.exports = {
   OC, ocArgs, OC_COMMAND, UNSET_OFFICE_CLAUDE_ENV, ocEnv, OC_ENV_PREFIXES, OC_PROVIDER_KEYS, OC_FORCED_ENV, launchLine,
   AGY_COMMAND, agyArgs, agyEnv, AGY_ENV_NAMES, AGY_ENV_WINDOWS, AGY_ENV_PREFIXES,
   CMD, cmdArgs, CMD_COMMAND, cmdEnv, CMD_ENV_NAMES, CMD_ENV_PREFIXES, CMD_MCP_OUTPUT_MAX,
+  CD, cdArgs, CD_COMMAND, cdEnv, CD_ENV_PREFIXES, CD_PROVIDER_KEYS,
 };

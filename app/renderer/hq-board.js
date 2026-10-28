@@ -27,7 +27,7 @@ function el(tag, attrs = {}, ...kids) {
 }
 
 // engine names on a remote row's status line (brand names, not translated)
-const ENGINE_NAMES = { claude: 'Claude Code', agy: 'Antigravity', commandcode: 'Command Code', opencode: 'OpenCode' };
+const ENGINE_NAMES = { claude: 'Claude Code', agy: 'Antigravity', commandcode: 'Command Code', opencode: 'OpenCode', codex: 'Codex' };
 
 /** @param {{ sidebar: HTMLElement, office: HTMLElement | null, api: any, t: (k: string, v?: any) => string, onSelect: () => void, isMac: boolean, link?: { view: () => any, onView: (cb: (v: any) => void) => void } }} o */
 export function mountHq({ sidebar, office, api, t, onSelect, isMac, link }) {

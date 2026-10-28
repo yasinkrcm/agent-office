@@ -76,10 +76,10 @@ function sleepBlocker({ now, idleMs, lastActivityAt, hasDraft = false, isActive 
  * How a sleeping tab starts (startPty options). After a sleep: its own session (--resume <id>). Not started yet at
  * launch ({ resume: true }): the "Continue last session" setting as it is now decides --continue. After an account
  * change ({}): fresh.
- * @param {{ sessionId?: string, resume?: boolean, agy?: boolean, cmd?: boolean, oc?: boolean } | undefined} how @param {boolean} resumePref
+ * @param {{ sessionId?: string, resume?: boolean, agy?: boolean, cmd?: boolean, oc?: boolean, cd?: boolean } | undefined} how @param {boolean} resumePref
  */
-// An Antigravity tab put to sleep ({ agy: true }, contract v3.23) or a Command Code one ({ cmd: true }, v3.25) or an OpenCode one ({ oc: true }, v3.40) always
+// An Antigravity tab put to sleep ({ agy: true }, contract v3.23) or a Command Code one ({ cmd: true }, v3.25) or an OpenCode one ({ oc: true }, v3.40) or a Codex one ({ cd: true }, v3.56) always
 // continues its folder's conversation.
-const wakeOptions = (how, resumePref) => (how?.sessionId ? { sessionId: how.sessionId } : how?.agy || how?.cmd || how?.oc ? { resume: true } : { resume: Boolean(how?.resume) && resumePref !== false });
+const wakeOptions = (how, resumePref) => (how?.sessionId ? { sessionId: how.sessionId } : how?.agy || how?.cmd || how?.oc || how?.cd ? { resume: true } : { resume: Boolean(how?.resume) && resumePref !== false });
 
 module.exports = { wakeOptions, SLEEP_CHOICES, DEFAULT_SLEEP, normalizeSleep, claudePidFile, hasScheduleTool, draftAfter, sleepBlocker };

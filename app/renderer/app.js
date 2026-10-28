@@ -461,7 +461,7 @@ async function setSavings(projectId, value) {
 async function setEngine(projectId, value) {
   try {
     const r = await api.projects.setEngine?.(projectId, value);
-    if ((value === 'agy' || value === 'opencode') && !r?.refused && usagePanel?.shownId() === projectId) usagePanel.hide();
+    if ((value === 'agy' || value === 'opencode' || value === 'codex') && !r?.refused && usagePanel?.shownId() === projectId) usagePanel.hide();
     for (const id of r?.restarted || []) panes.get(id)?.term.reset({ restarting: true });
     applyProjects(await api.projects.list());
     return r;
@@ -579,14 +579,19 @@ sidebar = mountSidebar($('sidebar'), {
   ocLogin: (mode) => openOc(mode || 'console'),
   ocLogout: () => openOc('logout'),
   ocRefresh: () => api.oc?.auth(true).then(setOcAuth, (e) => console.error(e)),
+  cdLogin: () => openCd('login'),
+  cdLogout: () => openCd('logout'),
+  cdRefresh: () => api.cd?.auth(true).then(setCdAuth, (e) => console.error(e)),
   cmdRefresh: () => api.cmd?.auth(true).then(setCmdAuth, (e) => console.error(e)),
   addFixcloud,
   addAgy: () => addEngineAccount('agy'),
   addCmd: () => addEngineAccount('cmd'),
   addOc: () => addEngineAccount('oc'),
+  addCd: () => addEngineAccount('cd'),
   hideOc: () => setEngineRow('showOcAccount', false),
   hideAgy: () => setEngineRow('showAgyAccount', false),
   hideCmd: () => setEngineRow('showCmdAccount', false),
+  hideCd: () => setEngineRow('showCdAccount', false),
   setLanguage: (setting) => api.language?.set(setting).catch((e) => console.error(e)),
   setResume: (on) => api.prefs?.set({ resume: on }).then((p) => sidebar.setResume(p?.resume)).catch((e) => console.error(e)),
   resumeUnfinished,
@@ -648,21 +653,34 @@ function openOc(mode) {
 api.oc?.onAuth(setOcAuth);
 api.oc?.auth().then(setOcAuth, (e) => console.error(e));
 
+// Codex's login (contract v3.56): one per user, `codex login` / `codex logout` in the 'login:cd' pty.
+function setCdAuth(a) { if (a) sidebar.setCdAuth(a); }
+function openCd(mode) {
+  if (!api.cd) return;
+  login.open({ id: 'cd', label: 'Codex' }, {
+    start: () => api.cd.login(mode),
+    hint: () => t(mode === 'logout' ? 'login.cdLogoutHint' : 'login.cdHint'),
+    title: () => t(mode === 'logout' ? 'login.cdLogoutTitle' : 'login.title', { label: 'Codex' }),
+  });
+}
+api.cd?.onAuth(setCdAuth);
+api.cd?.auth().then(setCdAuth, (e) => console.error(e));
+
 // Add account → Google Antigravity / Command Code (contract v3.30) / OpenCode (v3.40): the row stays in Accounts (showAgyAccount /
 // showCmdAccount); installed and not logged in → its login starts; not installed → the row shows the install line.
 async function setEngineRow(key, on) {
   try { sidebar.setEngineRows(await api.prefs?.set({ [key]: on })); } catch (e) { console.error(e); }
 }
 async function addEngineAccount(kind) {
-  const engine = kind === 'agy' ? api.agy : kind === 'oc' ? api.oc : api.cmd;
+  const engine = kind === 'agy' ? api.agy : kind === 'oc' ? api.oc : kind === 'cd' ? api.cd : api.cmd;
   if (!engine) return;
-  await setEngineRow(kind === 'agy' ? 'showAgyAccount' : kind === 'oc' ? 'showOcAccount' : 'showCmdAccount', true);
+  await setEngineRow(kind === 'agy' ? 'showAgyAccount' : kind === 'oc' ? 'showOcAccount' : kind === 'cd' ? 'showCdAccount' : 'showCmdAccount', true);
   let a = null;
   try { a = await engine.auth(true); } catch (e) { console.error(e); }
-  if (kind === 'agy') setAgyAuth(a); else if (kind === 'oc') setOcAuth(a); else setCmdAuth(a);
+  if (kind === 'agy') setAgyAuth(a); else if (kind === 'oc') setOcAuth(a); else if (kind === 'cd') setCdAuth(a); else setCmdAuth(a);
   // OpenCode needs no login (free models): adding its row only shows it; signing in is a button on the row
   if (kind === 'oc' || !a?.installed || a.state === 'in') return;
-  if (kind === 'agy') openAgy('login'); else openCmd();
+  if (kind === 'agy') openAgy('login'); else if (kind === 'cd') openCd('login'); else openCmd();
 }
 
 function setCollapsed(c) {

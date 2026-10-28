@@ -33,6 +33,7 @@ const AW = require('./src/agy-watch.js');
 const CS = require('./src/cmd-spool.js');
 const AG = require('./src/agy-auth.js');
 const CA = require('./src/cmd-auth.js');
+const CDA = require('./src/cd-auth.js');
 const OCA = require('./src/oc-auth.js');
 const LH = require('./src/link-host.js');
 const LC = require('./src/link-core.js');
@@ -73,8 +74,10 @@ const isAgy = (project) => P.engineOf(project) === 'agy';
 const isCmd = (project) => P.engineOf(project) === 'commandcode';
 // An OpenCode project (contract v3.40): its tabs run `opencode`; the same rules, observed the same way, no transcript.
 const isOc = (project) => P.engineOf(project) === 'opencode';
-// The engines the app observes itself instead of the plugin (agy v3.23, Command Code v3.25, OpenCode v3.40).
-const isObserved = (project) => isAgy(project) || isCmd(project) || isOc(project);
+// A Codex project (contract v3.56): its tabs run `codex`; the same rules, observed the same way.
+const isCd = (project) => P.engineOf(project) === 'codex';
+// The engines the app observes itself instead of the plugin (agy v3.23, Command Code v3.25, OpenCode v3.40, Codex v3.56).
+const isObserved = (project) => isAgy(project) || isCmd(project) || isOc(project) || isCd(project);
 const asleep = new Map();
 const activity = new Map(); // pty id → { at: last start/input/output, draft: prompt text typed but unsent }
 // Antigravity and Command Code tabs in the office (contract v3.23/v3.25, src/agy-watch.js): running pty id → { watch, cursor } (cursor: the
@@ -494,6 +497,11 @@ function windowsOpenCode(args, env) {
   const oc = OS.findOpenCode(env, isFile);
   return oc ? OS.windowsCommand(oc, args, env) : null;
 }
+/** How to start Codex's CLI (`codex`, contract v3.56) with these arguments; null when it is not installed. */
+function windowsCodex(args, env) {
+  const cd = OS.findCodex(env, isFile);
+  return cd ? OS.windowsCommand(cd, args, env) : null;
+}
 // Antigravity is missing: the same as for Claude Code (Enter there tries again).
 function sendNoAgy(id) {
   send('pty:data', id, `\r\n\x1b[31m${T('main.noAgy')}\x1b[0m\r\n${T('main.noAgyHelp')}\r\n`);
@@ -509,6 +517,12 @@ function sendNoOpenCode(id) {
   send('pty:data', id, `\r\n\x1b[31m${T('main.noOc')}\x1b[0m\r\n${T('main.noOcHelp', { url: OPENCODE_URL })}\r\n`);
   send('pty:exit', id, 127);
 }
+// Codex is missing: the same as for Claude Code (Enter there tries again).
+function sendNoCodex(id) {
+  send('pty:data', id, `\r\n\x1b[31m${T('main.noCd')}\x1b[0m\r\n${T('main.noCdHelp', { url: CODEX_URL })}\r\n`);
+  send('pty:exit', id, 127);
+}
+const CODEX_URL = 'https://developers.openai.com/codex';
 /** node-pty arguments: a verbatim cmd.exe line is passed as one pre-quoted string. */
 const ptyArgs = (cmd) => (cmd.verbatim ? cmd.args.join(' ') : cmd.args);
 
@@ -575,6 +589,7 @@ function onFocus() {
   checkAllAuth();
   checkAgyAuth();
   checkCmdAuth();
+  checkCdAuth();
   checkOcAuth();
 }
 
@@ -812,6 +827,47 @@ function startOcLogin(mode) {
   });
 }
 
+// --- Codex login (contract v3.56, src/cd-auth.js): one login per user (`codex login`, ~/.codex/auth.json). The check
+// and the login pty get only cdEnv's allowlist: nothing of Claude Code or the office reaches Codex. Logged in = only
+// auth.json exists (it holds the tokens and the API key and is never read).
+const CD_LOGIN = 'login:cd';
+let cdAuth = /** @type {any} */ ({ installed: false, state: 'checking' });
+let cdChecking = null;
+const sendCdAuth = () => send('cd:auth', cdAuth);
+function cdStatus(env) {
+  if (IS_WIN) return Promise.resolve({ path: OS.findCodex(env, isFile) });
+  return new Promise((resolve) => {
+    const child = execFile(shell(), ['-l', '-i', '-c', CDA.CD_STATUS_COMMAND], { env, timeout: 15000, cwd: app.getPath('home') },
+      (_err, stdout) => resolve(CDA.parseCdStatus(String(stdout || ''))));
+    try { child.stdin?.end(); } catch {}
+  });
+}
+function checkCdAuth() {
+  if (cdChecking) return cdChecking;
+  cdChecking = (async () => {
+    const env = EN.cdEnv(process.env);
+    const status = await cdStatus(env);
+    cdAuth = CDA.cdAuthState(status, env.HOME || env.USERPROFILE || app.getPath('home'), (f) => fs.existsSync(f));
+    sendCdAuth();
+  })().catch((e) => console.error('cd auth:', e.message)).finally(() => { cdChecking = null; });
+  return cdChecking;
+}
+// "Giriş yap" / "Çıkış yap": `codex login` / `codex logout` in a login pty (login opens the browser to authorize).
+// Same channel and replace rules as agy's.
+function startCdLogin(mode) {
+  if (!win) return;
+  const mode0 = String(mode || '') === 'logout' ? 'logout' : 'login';
+  const env = EN.cdEnv(process.env);
+  startLoginPty({
+    id: CD_LOGIN, label: 'cd login pty',
+    env,
+    windowsLauncher: (e) => windowsCodex(mode0 === 'logout' ? CDA.CD_LOGOUT_ARGS : CDA.CD_LOGIN_ARGS, e),
+    argv: [EN.CD_COMMAND, EN.CD.bin, ...(mode0 === 'logout' ? CDA.CD_LOGOUT_ARGS : CDA.CD_LOGIN_ARGS)],
+    noTool: sendNoCodex,
+    check: checkCdAuth,
+  });
+}
+
 // --- account quota (see src/usage.js)
 const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return undefined; } };
 
@@ -969,7 +1025,7 @@ function tokenFolders(p) {
 /** detail: also the costliest sub-agent runs and the fixed prefix (contract v3.21; the panel, not the row). */
 async function tokenReport(id, { detail = false } = {}) {
   const p = P.findProject(state, id);
-  if (!p || P.engineOf(p) === 'agy' || P.engineOf(p) === 'opencode') return null; // Antigravity writes no transcripts (v3.22); OpenCode's are a database (v3.40)
+  if (!p || P.engineOf(p) === 'agy' || P.engineOf(p) === 'opencode' || P.engineOf(p) === 'codex') return null; // Antigravity writes no transcripts (v3.22); OpenCode's are a database (v3.40); Codex's rollouts are not token-scanned (v3.56)
   const since = Number.isFinite(p.addedAt) ? p.addedAt : null;
   const folders = tokenFolders(p);
   const recs = await tokenScanner.scanFolders(folders, { since: since ?? 0 });
@@ -1071,6 +1127,7 @@ function startPty(id, { resume = false, sessionId = null, imported = false, prom
   if (isAgy(r.project)) return startAgy(id, r, { resume, prompt });
   if (isCmd(r.project)) return startCommandCode(id, r, { resume, prompt });
   if (isOc(r.project)) return startOpenCode(id, r, { resume, prompt });
+  if (isCd(r.project)) return startCodex(id, r, { resume, prompt });
   const { project, tab, dir: cwd } = r;
   const account = A.accountOf(state, project);
   const { configDir } = account;
@@ -1285,9 +1342,10 @@ function agySessions(now = Date.now()) {
     if (!r) continue;
     const dir = agyOwnDir(id);
     const cmd = isCmd(r.project);
-    const file = !dir || isOc(r.project) ? null : cmd ? AW.cmdTranscriptPath(home, dir) : AW.agyTranscriptPath(home, dir);
+    const cd = isCd(r.project);
+    const file = !dir || isOc(r.project) ? null : cmd ? AW.cmdTranscriptPath(home, dir) : cd ? AW.codexTranscriptPath(home, dir, now) : AW.agyTranscriptPath(home, dir);
     if (file) {
-      w.cursor = cmd ? AW.readTranscript(file, w.cursor, AW.CMD_PROMPT_RE) : AW.readTranscript(file, w.cursor);
+      w.cursor = cmd ? AW.readTranscript(file, w.cursor, AW.CMD_PROMPT_RE) : cd ? AW.readTranscript(file, w.cursor, AW.CD_PROMPT_RE) : AW.readTranscript(file, w.cursor);
       w.watch.transcript(w.cursor, now);
     }
     const sp = cmdSpool.get(id);
@@ -1444,6 +1502,55 @@ function startOpenCode(id, { project, tab, dir: cwd }, { resume = false, prompt 
   lastSid.delete(id);
   retireAgy(id);
   agyWatch.set(id, { watch: AW.createAgyWatch(startedAt, { engine: 'opencode', label: 'OpenCode' }), cursor: null, key: `oc-${id.replace(/[^\w-]/g, '_')}-${++agySeq}` });
+  attachPty(terms, id, t, {
+    onData: (d) => observedOnData(id, d),
+    onExit: ({ exitCode }) => {   // killed on purpose (restart/removal): silent (the id guard)
+      retireAgy(id);
+      terms.delete(id);
+      setMarks(R.clearInterrupted(marks(), [id]));
+      removeMcpFile(id);
+      // no session to continue: start fresh without showing the exit to the user
+      if (isResume && exitCode !== 0 && Date.now() - startedAt < RESUME_GRACE_MS) return startPty(id);
+      activity.delete(id);
+      send('pty:exit', id, exitCode);
+      broadcast();
+    },
+  });
+  broadcast();
+}
+
+// A tab of a Codex project (contract v3.56): `codex` from the same login shell, with none of Claude Code's setup nor
+// of the office (the same rules as startOpenCode, engine.js cdEnv). resume: `codex resume --last`, only for a tab that
+// continues; prompt only when resuming. The app watches it one way (engine 'codex'): the pty's bytes and keys, and
+// read-only the tab's rollout transcript (src/agy-watch.js codexTranscriptPath) counting its task_started records.
+function startCodex(id, { project, tab, dir: cwd }, { resume = false, prompt = '' } = {}) {
+  removeMcpFile(id); // no MCP or office directory file of an earlier Claude Code start stays behind for this tab
+  const { cols, rows } = sizes.get(id) || lastSize;
+  const isResume = resume && (!tab || Boolean(tab.worktree));
+  const args = EN.cdArgs({ resume: isResume, prompt, model: P.bossModelOf(project) }); // boss model: v3.36
+  const startedAt = Date.now();
+  // an allowlist of the user's env (engine.js cdEnv): no Claude, Anthropic, office or MCP variable
+  const env = EN.cdEnv(process.env);
+  let t;
+  try {
+    const win32 = IS_WIN ? windowsCodex(args, env) : null;
+    if (IS_WIN && !win32) { sendNoCodex(id); return broadcast(); }
+    t = pty.spawn(win32 ? win32.file : shell(), win32 ? ptyArgs(win32) : ['-l', '-i', '-c', EN.CD_COMMAND, EN.CD.bin, ...args], {
+      name: 'xterm-256color',
+      cols, rows,
+      cwd: isDir(cwd) ? cwd : app.getPath('home'),
+      env,
+    });
+  } catch (e) {
+    console.error('pty başlatılamadı:', e.message);
+    send('pty:exit', id, -1);
+    return broadcast();
+  }
+  terms.set(id, t);
+  activity.set(id, { at: startedAt, draft: false });
+  lastSid.delete(id);
+  retireAgy(id);
+  agyWatch.set(id, { watch: AW.createAgyWatch(startedAt, { engine: 'codex', label: 'Codex' }), cursor: null, key: `cd-${id.replace(/[^\w-]/g, '_')}-${++agySeq}` });
   attachPty(terms, id, t, {
     onData: (d) => observedOnData(id, d),
     onExit: ({ exitCode }) => {   // killed on purpose (restart/removal): silent (the id guard)
@@ -2590,7 +2697,7 @@ function sleepIdle() {
       const w = agyWatch.get(id);
       if (!w || w.watch.blocker() || !agyOwnDir(id)) continue;
       killPty(id);
-      asleep.set(id, isCmd(r.project) ? { cmd: true } : isOc(r.project) ? { oc: true } : { agy: true });
+      asleep.set(id, isCmd(r.project) ? { cmd: true } : isOc(r.project) ? { oc: true } : isCd(r.project) ? { cd: true } : { agy: true });
       send('pty:sleep', id);
       slept = true;
       continue;
@@ -3008,7 +3115,7 @@ ipcMain.handle('projects:setEngine', async (_e, id, value) => {
     }
   } else if (running.length) {
     if (!win) return { restarted: [], refused: 'cancelled' };
-    const kind = isCmd(p) ? 'Cc' : isOc(p) ? 'Oc' : 'Agy';
+    const kind = isCmd(p) ? 'Cc' : isOc(p) ? 'Oc' : isCd(p) ? 'Cd' : 'Agy';
     const choice = await ask(T(`main.engine${kind}Confirm`, { name: p.name }), T(`main.engine${kind}Detail`), [T('main.engineSwitch'), T('main.cancel')], 'warning');
     if (choice !== 0) return { restarted: [], refused: 'cancelled' };
   }
@@ -3117,7 +3224,9 @@ ipcMain.handle('accounts:login', (_e, id) => { startLogin(id); });
 ipcMain.handle('agy:auth', async (_e, refresh) => { if (refresh) await checkAgyAuth(); return agyAuth; });
 ipcMain.handle('agy:login', () => { startAgyLogin(); });
 ipcMain.handle('cmd:auth', async (_e, refresh) => { if (refresh) await checkCmdAuth(); return cmdAuth; });
+ipcMain.handle('cd:auth', async (_e, refresh) => { if (refresh) await checkCdAuth(); return cdAuth; });
 ipcMain.handle('cmd:login', () => { startCmdLogin(); });
+ipcMain.handle('cd:login', (_e, mode) => { startCdLogin(mode); });
 ipcMain.handle('oc:auth', async (_e, refresh) => { if (refresh) await checkOcAuth(); return ocAuth; });
 // v3.41: only 'console' | 'auth' | 'logout' pass (anything else is the device code login)
 ipcMain.handle('oc:login', (_e, mode) => { startOcLogin(OCA.ocLoginMode(mode)); });
@@ -3300,7 +3409,7 @@ async function exportSession(projectId) {
   const p = P.findProject(state, projectId || state.activeId);
   if (!p || !win || transferBusy) return;
   if (isObserved(p)) { // v3.22, v3.25, v3.40: none of these engines' sessions move between computers
-    const msg = isAgy(p) ? T('main.moveAgy') : isOc(p) ? T('main.moveOc') : T('main.moveCc');
+    const msg = isAgy(p) ? T('main.moveAgy') : isOc(p) ? T('main.moveOc') : isCd(p) ? T('main.moveCd') : T('main.moveCc');
     return dialog.showMessageBox(win, { type: 'info', message: msg });
   }
   transferBusy = true;
@@ -3443,7 +3552,7 @@ async function runImport(file) {
   const real = (d) => { try { return fs.realpathSync(d); } catch { return d; } };
   const existing = P.findByDir(state, dir) || state.projects.find((p) => real(p.dir) === real(dir)) || null;
   if (existing && isObserved(existing)) {
-    const msg = isAgy(existing) ? T('main.moveAgy') : isOc(existing) ? T('main.moveOc') : T('main.moveCc');
+    const msg = isAgy(existing) ? T('main.moveAgy') : isOc(existing) ? T('main.moveOc') : isCd(existing) ? T('main.moveCd') : T('main.moveCc');
     return warnBox(msg);
   }
   const account = existing ? A.accountOf(state, existing) : accountById(A.DEFAULT_ID) || A.DEFAULT_ACCOUNT;
@@ -3827,7 +3936,7 @@ function buildMenu() {
 // showAgyAccount / showCmdAccount / showOcAccount = the Antigravity / Command Code / OpenCode row in Accounts: true (added via Add account),
 // false (removed), null (the old rule: shown when installed or a project runs it) (contract v3.30)
 const themeSetting = (v) => (TH ? TH.normalizeThemeSetting(v) : 'auto');
-const prefs = () => ({ resume: state.resume !== false, resumeWork: state.resumeWork !== false, theme: themeSetting(state.theme), manager: state.manager !== false, shareMcp: state.shareMcp !== false, reloadMcp: state.reloadMcp !== false, fallback: state.fallback !== false, sleepMinutes: sleepMinutes(), showAgyAccount: typeof state.showAgyAccount === 'boolean' ? state.showAgyAccount : null, showCmdAccount: typeof state.showCmdAccount === 'boolean' ? state.showCmdAccount : null, showOcAccount: typeof state.showOcAccount === 'boolean' ? state.showOcAccount : null });
+const prefs = () => ({ resume: state.resume !== false, resumeWork: state.resumeWork !== false, theme: themeSetting(state.theme), manager: state.manager !== false, shareMcp: state.shareMcp !== false, reloadMcp: state.reloadMcp !== false, fallback: state.fallback !== false, sleepMinutes: sleepMinutes(), showAgyAccount: typeof state.showAgyAccount === 'boolean' ? state.showAgyAccount : null, showCmdAccount: typeof state.showCmdAccount === 'boolean' ? state.showCmdAccount : null, showOcAccount: typeof state.showOcAccount === 'boolean' ? state.showOcAccount : null, showCdAccount: typeof state.showCdAccount === 'boolean' ? state.showCdAccount : null });
 ipcMain.handle('prefs:get', () => prefs());
 ipcMain.handle('prefs:set', (_e, p) => {
   if (p && typeof p.resume === 'boolean' && p.resume !== prefs().resume) commit({ ...state, resume: p.resume });
@@ -3836,7 +3945,7 @@ ipcMain.handle('prefs:set', (_e, p) => {
   if (p && typeof p.shareMcp === 'boolean' && p.shareMcp !== prefs().shareMcp) commit({ ...state, shareMcp: p.shareMcp });
   if (p && typeof p.reloadMcp === 'boolean' && p.reloadMcp !== prefs().reloadMcp) commit({ ...state, reloadMcp: p.reloadMcp });
   if (p && typeof p.fallback === 'boolean' && p.fallback !== prefs().fallback) commit({ ...state, fallback: p.fallback });
-  for (const k of ['showAgyAccount', 'showCmdAccount', 'showOcAccount']) if (p && typeof p[k] === 'boolean' && p[k] !== prefs()[k]) commit({ ...state, [k]: p[k] });
+  for (const k of ['showAgyAccount', 'showCmdAccount', 'showOcAccount', 'showCdAccount']) if (p && typeof p[k] === 'boolean' && p[k] !== prefs()[k]) commit({ ...state, [k]: p[k] });
   if (p && typeof p.theme === 'string' && themeSetting(p.theme) !== prefs().theme) commit({ ...state, theme: themeSetting(p.theme) });
   if (p && Z.SLEEP_CHOICES.includes(p.sleepMinutes) && p.sleepMinutes !== prefs().sleepMinutes) {
     commit({ ...state, sleepMinutes: p.sleepMinutes });
@@ -3904,6 +4013,7 @@ if (!isSecondInstance) app.whenReady().then(async () => {
   checkAllAuth();
   checkAgyAuth();
   checkCmdAuth();
+  checkCdAuth();
   checkOcAuth();
   startLink();
   await startOffice();   // v3.35: listening (or not) before the first boss tab starts
