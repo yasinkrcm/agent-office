@@ -62,6 +62,8 @@ export function mountSidebar(el, on) {
   let showCmd = null;
   let ocAuth = null; // OpenCode's logins (v3.40, main's OcAuth); null until main answers
   let showOc = null;
+  let cdAuth = null; // Codex's login (v3.56, main's CdAuth); null until main answers
+  let showCd = null;
   let addMenu = false; // the Add account type menu is open (v3.30)
   let ocLoginMenu = false; // the OpenCode login chooser is open: normal (device code) vs one provider (v3.40)
   let addFor = null; // the project whose Account dropdown opened the type menu (v3.36): a new Claude account goes to it
@@ -232,7 +234,7 @@ export function mountSidebar(el, on) {
   let draft = null;
   const queue = (key, fn) => draft?.set(key, fn);
 
-  const engineOfRow = (p) => (p.engine === 'agy' || p.engine === 'commandcode' || p.engine === 'opencode' ? p.engine : 'claude');
+  const engineOfRow = (p) => (p.engine === 'agy' || p.engine === 'commandcode' || p.engine === 'opencode' || p.engine === 'codex' ? p.engine : 'claude');
   /**
    * A row control with its label (contract v3.36): every engine shows it; one the engine can't honour (src/engine-caps.mjs)
    * is disabled, its reason in the title and in a small line shown on hover or focus.
@@ -252,7 +254,7 @@ export function mountSidebar(el, on) {
   // engine (main's projects:setEngine: refused or cancelled, the select goes back); choosing a Claude account sets the
   // engine back to Claude Code and the account. p.accountId stays the Claude account while another engine runs.
   const NEW_ACCOUNT = '__new__';
-  const ENGINE_OPT = { agy: '__engine:agy', commandcode: '__engine:commandcode', opencode: '__engine:opencode' }; // opencode: v3.40
+  const ENGINE_OPT = { agy: '__engine:agy', commandcode: '__engine:commandcode', opencode: '__engine:opencode', codex: '__engine:codex' }; // opencode: v3.40, codex: v3.56
   function accountSelect(p) {
     const engine = engineOfRow(p);
     const now = engine === 'claude' ? p.accountId : ENGINE_OPT[engine];
@@ -298,6 +300,9 @@ export function mountSidebar(el, on) {
     }
     if (ocShown() || engine === 'opencode') { // contract v3.40
       sel.append(engineOpt(ENGINE_OPT.opencode, engine === 'opencode', t('sidebar.engineOpencode')));
+    }
+    if (cdShown() || engine === 'codex') { // contract v3.56
+      sel.append(engineOpt(ENGINE_OPT.codex, engine === 'codex', t('sidebar.engineCodex')));
     }
     sel.append(h('option', { value: NEW_ACCOUNT }, t('sidebar.newAccount')));
     return control(p, 'account', t('sidebar.account'), sel);
@@ -417,6 +422,7 @@ export function mountSidebar(el, on) {
     const engine = engineOfRow(p);
     if (engine === 'claude') return h('span', { class: 'sb-tag sb-engine', title: t('sidebar.engineTitle'), 'aria-label': t('sidebar.engine') }, t('sidebar.engineClaude'));
     if (engine === 'opencode') return h('span', { class: 'sb-tag sb-agy', title: t('sidebar.ocHintTitle') }, t('sidebar.ocHint')); // v3.40
+    if (engine === 'codex') return h('span', { class: 'sb-tag sb-agy', title: t('sidebar.cdHintTitle') }, t('sidebar.cdHint')); // v3.56
     return engine === 'commandcode'
       ? h('span', { class: 'sb-tag sb-agy', title: t('sidebar.cmdHintTitle') }, t('sidebar.cmdHint'))
       : h('span', { class: 'sb-tag sb-agy', title: t('sidebar.agyHintTitle') }, t('sidebar.agyHint'));
@@ -452,14 +458,14 @@ export function mountSidebar(el, on) {
       if (ocAuth?.state !== 'missing') return null;
       return h('span', { class: 'sb-warn', title: t('sidebar.ocMissingTitle') }, t('sidebar.ocMissing'));
     }
-    if (engine !== 'claude') { // Antigravity's / Command Code's own login (v3.24, v3.30; contract v3.36)
-      const auth = engine === 'agy' ? agyAuth : cmdAuth;
+    if (engine !== 'claude') { // Antigravity's / Command Code's / Codex's own login (v3.24, v3.30, v3.56; contract v3.36)
+      const auth = engine === 'agy' ? agyAuth : engine === 'codex' ? cdAuth : cmdAuth;
       if (auth?.state !== 'out') return null;
-      const label = engine === 'agy' ? t('sidebar.engineAgy') : t('sidebar.engineCommandcode');
+      const label = engine === 'agy' ? t('sidebar.engineAgy') : engine === 'codex' ? t('sidebar.engineCodex') : t('sidebar.engineCommandcode');
       return h('button', {
         class: 'sb-warn',
         title: t('sidebar.noLoginTitle', { label }),
-        onclick: (e) => { e.stopPropagation(); if (engine === 'agy') on.agyLogin?.(); else on.cmdLogin?.(); },
+        onclick: (e) => { e.stopPropagation(); if (engine === 'agy') on.agyLogin?.(); else if (engine === 'codex') on.cdLogin?.(); else on.cmdLogin?.(); },
       }, t('sidebar.noLogin'));
     }
     const a = accounts.find((x) => x.id === p.accountId);
@@ -784,6 +790,10 @@ export function mountSidebar(el, on) {
   const OC_INSTALL = platform === 'win32' ? 'npm i -g opencode-ai' : 'curl -fsSL https://opencode.ai/install | bash';
   const ocUsed = () => projects.some((p) => p.engine === 'opencode');
   const ocShown = () => ocUsed() || showOc === true || (showOc !== false && Boolean(ocAuth?.installed));
+  // Codex (contract v3.56): the same rule with codex and engine 'codex'.
+  const CD_INSTALL = 'npm i -g @openai/codex';
+  const cdUsed = () => projects.some((p) => p.engine === 'codex');
+  const cdShown = () => cdUsed() || showCd === true || (showCd !== false && Boolean(cdAuth?.installed));
   const rowBtn = (cls, text, title, fn) => h('button', { class: 'sb-btn ' + cls, title, onclick: (e) => { e.stopPropagation(); fn(); } }, text);
   /** × on an engine row: hides it (no log out); not while a project runs that engine. */
   const hideBtn = (used, fn) => (used ? null : h('button', { class: 'sb-x', title: t('sidebar.hideEngineRow'), onclick: () => fn() }, '×'));
@@ -851,6 +861,36 @@ export function mountSidebar(el, on) {
         h('span', { class: 'sb-tag' }, 'cmd'),
         h('button', { class: 'sb-x', title: t('sidebar.refreshAuth'), disabled: state === 'checking', onclick: () => on.cmdRefresh?.() }, '↻'),
         hideBtn(cmdUsed(), () => on.hideCmd?.()),
+      ),
+      auth);
+  }
+
+  /** Codex's single login (contract v3.56): logged in = ~/.codex/auth.json exists; Giriş yap runs `codex login`. */
+  function cdRow() {
+    if (!cdShown()) return null;
+    const state = cdAuth?.state || 'checking';
+    const text = (s, title = '') => h('span', { class: 'sb-auth-text', title }, s);
+    let auth;
+    if (state === 'missing') {
+      auth = h('div', { class: 'sb-auth sb-agy-missing' }, text(t('sidebar.cdMissing'), t('sidebar.cdMissingTitle')),
+        rowBtn('', t('sidebar.checkAgain'), t('sidebar.checkAgainTitle'), () => on.cdRefresh?.()),
+        h('code', { class: 'sb-agy-install', title: t('sidebar.cdInstallTitle') }, CD_INSTALL));
+    } else if (state === 'in') {
+      auth = h('div', { class: 'sb-auth' }, text(t('sidebar.loggedIn'), t('sidebar.cdInTitle')));
+    } else if (state === 'out') {
+      auth = h('div', { class: 'sb-auth' }, text(t('sidebar.notLoggedIn')),
+        rowBtn('primary', t('sidebar.login'), t('sidebar.cdLoginTitle'), () => on.cdLogin?.()),
+        rowBtn('', t('sidebar.logout'), t('sidebar.cdLogoutTitle'), () => on.cdLogout?.()));
+    } else {
+      auth = h('div', { class: 'sb-auth' }, text(t('sidebar.checking')));
+    }
+    return h('li', { class: `sb-acc sb-agy auth-${state}`, 'data-id': 'cd' },
+      h('div', { class: 'sb-acc-top', title: t('sidebar.cdTitle') },
+        h('span', { class: 'sb-adot', title: hasText(`sidebar.authDot.${state}`) ? t(`sidebar.authDot.${state}`) : '' }),
+        h('span', { class: 'sb-name' }, 'Codex'),
+        h('span', { class: 'sb-tag' }, 'cd'),
+        h('button', { class: 'sb-x', title: t('sidebar.refreshAuth'), disabled: state === 'checking', onclick: () => on.cdRefresh?.() }, '↻'),
+        hideBtn(cdUsed(), () => on.hideCd?.()),
       ),
       auth);
   }
@@ -987,8 +1027,9 @@ export function mountSidebar(el, on) {
     const agy = agyRow();
     const cmd = cmdRow();
     const oc = ocRow();
+    const cd = cdRow();
     const ocMenu = oc && (ocAuth?.major ?? 0) < 2 && ocLoginMenu ? ocLoginMenuRow() : null;
-    acctList.replaceChildren(...rows, ...(agy ? [agy] : []), ...(cmd ? [cmd] : []), ...(oc ? [oc] : []),
+    acctList.replaceChildren(...rows, ...(agy ? [agy] : []), ...(cmd ? [cmd] : []), ...(oc ? [oc] : []), ...(cd ? [cd] : []),
       ...(ocMenu ? [ocMenu] : []),
       h('li', {}, h('button', {
         class: 'sb-add', title: t('sidebar.addAccountTitle'), 'aria-haspopup': 'menu', 'aria-expanded': String(addMenu),
@@ -1080,7 +1121,7 @@ export function mountSidebar(el, on) {
       attn = new Map((s.status || []).filter((x) => x.attention).map((x) => [x.id, x.attention]));
       const pk = JSON.stringify([projects, activeId, [...status], [...asleep], [...attn], accounts.map((a) => [a.id, a.label, a.auth?.state])]);
       if (pk !== projKey) { projKey = pk; renderProjects(); }
-      const ak = JSON.stringify([accounts, agyShown(), cmdShown(), ocShown()]);
+      const ak = JSON.stringify([accounts, agyShown(), cmdShown(), ocShown(), cdShown()]);
       if (ak !== acctKey && !editing) { acctKey = ak; renderAccounts(); }
     },
     /** Antigravity's login state (contract v3.24, main's AgyAuth). */
@@ -1102,11 +1143,19 @@ export function mountSidebar(el, on) {
       ocAuth = a || null;
       if (!editing) renderAccounts();
     },
-    /** The Antigravity / Command Code / OpenCode rows' setting (contract v3.30, prefs showAgyAccount / showCmdAccount). */
+    /** Codex's login state (contract v3.56, main's CdAuth). */
+    setCdAuth(a) {
+      const before = cdAuth?.state;
+      cdAuth = a || null;
+      if (before !== cdAuth?.state) renderProjects();
+      if (!editing) renderAccounts();
+    },
+    /** The Antigravity / Command Code / OpenCode / Codex rows' setting (contract v3.30, prefs showAgyAccount / showCmdAccount). */
     setEngineRows(p) {
       showAgy = typeof p?.showAgyAccount === 'boolean' ? p.showAgyAccount : null;
       showCmd = typeof p?.showCmdAccount === 'boolean' ? p.showCmdAccount : null;
       showOc = typeof p?.showOcAccount === 'boolean' ? p.showOcAccount : null;
+      showCd = typeof p?.showCdAccount === 'boolean' ? p.showCdAccount : null;
       if (!editing) renderAccounts();
     },
     /** Today's token usage per project: [{ id, usd, total, pct }] (contract v3.13); the line opens the usage panel. */

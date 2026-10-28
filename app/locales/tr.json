@@ -338,8 +338,16 @@
       "ocWorkers": "OpenCode için çalışanlar izlenmez: uygulama yalnızca terminalini izler.",
       "ocCost": "OpenCode uygulamaya token sayısı bildirmez.",
       "ocProjectFiles": "Agent Office, OpenCode için proje dosyası yazmaz.",
-      "claudeOnlyMcp": "Yalnız Claude Code: Agent Office'te eklenen sunucular ve tokenları Antigravity, Command Code ya da OpenCode'a verilmez.",
-      "claudeOnlySkills": "Yalnız Claude Code: beceri paketleri Claude Code eklentileridir; Antigravity, Command Code ve OpenCode almaz."
+      "claudeOnlyMcp": "Yalnız Claude Code: Agent Office'te eklenen sunucular ve tokenları Antigravity, Command Code, OpenCode ya da Codex'e verilmez.",
+      "claudeOnlySkills": "Yalnız Claude Code: beceri paketleri Claude Code eklentileridir; Antigravity, Command Code, OpenCode ve Codex almaz.",
+      "cdManager": "Codex'in yönetici modu yok; patron her işi kendisi yürütür.",
+      "cdAgentModel": "Codex alt ajan modellerini kendisi seçer; uygulama ona ajan ayarı geçmez.",
+      "cdContextCap": "Codex konuşmasını kendisi sıkıştırır; uygulama ona boyut ayarlamaz.",
+      "cdSavings": "Codex uygulamadan çıktı sınırı ya da adım bütçesi almaz.",
+      "cdBackup": "Codex girişini kendisi tutar; geçilecek ikinci hesap yok.",
+      "cdWorkers": "Codex'in alt ajanları henüz izlenmez: kayıtları Agent Office'e olay vermiyor.",
+      "cdCost": "Codex'in rollout satırları uygulama tarafından token taramasından geçmez.",
+      "cdProjectFiles": "Agent Office, Codex için proje dosyası yazmaz."
     },
     "skills": "Beceriler",
     "skillsHint": "Agent Office ile gelen beceri paketleri, yalnız Claude Code için (Antigravity, Command Code ve OpenCode almaz). Boştaki oturumlar değişikliği almak için yeniden başlar; meşgul olanlar bir sonraki başlangıçta alır. Bir proje her paketi kendi ⚙ ayarlarında değiştirebilir.",
@@ -360,7 +368,17 @@
       "caveman": "İstediğinde kısa yanıtlar (/caveman). Yalnız beceriler, kanca yok.",
       "taste-skill": "Bak-düzelt döngüsüyle katı bir ön yüz stili.",
       "scroll-craft": "Kaydırmayla ilerleyen sinematik tanıtım sayfaları. Görsel ve video üretimi ücretli bir kie.ai API anahtarı ister."
-    }
+    },
+    "cdHintTitle": "Bu proje Codex çalıştırıyor. Ofis ona tek yönde bakar: terminalinden ve kendi rollout kayıtlarından (yalnız okuma) — patron çalışır, onay ister, biten her dönüşü teslim sayar ve boşta uyur. Token sayımı yok; ofisin hiçbir şeyi (günlük, dizin, diğer projeler, kısa) ona verilmez.",
+    "cdHint": "Codex — gözlemleniyor",
+    "engineCodex": "Codex",
+    "cdMissing": "codex kurulu değil",
+    "cdMissingTitle": "Bir Codex projesi için Codex CLI gerekir. Onu bir terminalde kur, sonra Check again'e bas.",
+    "cdInstallTitle": "Kurulum komutu developers.openai.com/codex (kendi terminalinde kendin çalıştır)",
+    "cdTitle": "Codex (codex): girişini Codex kendisi tutar (~/.codex/auth.json); uygulama yalnız dosyanın var olup olmadığını bakar, içeriğini asla okumaz.",
+    "cdInTitle": "Codex'in kayıtlı girişi var (~/.codex/auth.json). Uygulama yalnız dosyanın var olduğunu kontrol eder.",
+    "cdLoginTitle": "codex login burada çalışır (yetki için tarayıcı açılır)",
+    "cdLogoutTitle": "codex logout burada çalışır"
   },
   "panel": {
     "types": {
@@ -483,7 +501,10 @@
     },
     "ocHint": "Listeden bir sağlayıcı seç ve adımlarını izle (tarayıcı açılabilir ya da bir API anahtarı yapıştırırsın). Bilgiler kaydedildi dediğinde bu pencereyi kapat.",
     "ocLogoutHint": "Çıkış yapacağın sağlayıcıyı seç. Kaldırıldı dediğinde bu pencereyi kapat.",
-    "ocLogoutTitle": "OpenCode'dan çıkış yap"
+    "ocLogoutTitle": "OpenCode'dan çıkış yap",
+    "cdHint": "Codex için tarayıcı açılır; yetkiyi onayla ve buraya dön. Tokenların kaydedildiğini söylediğinde giriş yapılmış olur ve bu pencere kapanır.",
+    "cdLogoutHint": "Çıkış yapıldı. Bu pencereyi kapatabilirsin.",
+    "cdLogoutTitle": "Codex çıkışı"
   },
   "terminal": {
     "exited": "— Claude kapandı — yeniden başlatmak için Enter —",
@@ -703,7 +724,12 @@
     "routineAllGood": "Her şey yolunda",
     "routineFailed": "{name} rutini başarısız ({reason})",
     "routineNeedsApproval": "{name} rutini {project} projesine görev göndermek için onayınızı bekliyor",
-    "routineNeedsApprovalRemote": "{name} rutini {machine} üzerindeki {project} projesine görev göndermek için onayınızı bekliyor"
+    "routineNeedsApprovalRemote": "{name} rutini {machine} üzerindeki {project} projesine görev göndermek için onayınızı bekliyor",
+    "noCd": "Codex bulunamadı.",
+    "noCdHelp": "Codex kur ({url}), yeni bir terminalde `codex` çalıştığından emin ol, sonra tekrar denemek için burada Enter'a bas.",
+    "moveCd": "Yalnızca Claude Code projeleri başka bir bilgisayara taşınabilir; bu proje Codex çalıştırıyor.",
+    "engineCdConfirm": "“{name}” Claude Code'a geçirilsin mi?",
+    "engineCdDetail": "Bu projede Codex çalışıyor ve Agent Office işin ortasında olup olmadığını bilemez. Geçiş onu şimdi durdurur; Claude Code sıfırdan başlar."
   },
   "auth": {
     "unreadable": "giriş durumu okunamadı",

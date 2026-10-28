@@ -195,7 +195,7 @@ function cleanSnapshot(s) {
   for (const p of s.projects) {
     if (!p || !isId(p.id) || !STATUS.includes(p.status)) return null;
     projects.push({
-      id: p.id, name: cleanLine(p.name, 60) || '?', engine: ['claude', 'agy', 'commandcode', 'opencode'].includes(p.engine) ? p.engine : 'claude',
+      id: p.id, name: cleanLine(p.name, 60) || '?', engine: ['claude', 'agy', 'commandcode', 'opencode', 'codex'].includes(p.engine) ? p.engine : 'claude',
       status: p.status, working: isInt(p.working, 999) ? p.working : 0, delivered: isInt(p.delivered, 99999) ? p.delivered : 0,
       attention: p.attention === 'permission' || p.attention === 'done' ? p.attention : null,
       ...(isStr(p.tool, 200) && p.tool ? { tool: cleanLine(p.tool, 60) } : {}),
@@ -218,7 +218,7 @@ function cleanSnapshot(s) {
 
 const PLATFORMS = ['darwin', 'linux', 'win32'];
 const PROJECT_STATES = ['running', 'asleep', 'stopped'];
-const ENGINES = ['claude', 'agy', 'commandcode', 'opencode'];
+const ENGINES = ['claude', 'agy', 'commandcode', 'opencode', 'codex'];
 const isNum = (v, max) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max;
 
 /** A received `res` reduced to the known fields; null when malformed. */

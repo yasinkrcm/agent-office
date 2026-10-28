@@ -214,7 +214,7 @@ window.agentOffice = {
     },
     setEngine: async (id, value) => {
       const p = /** @type {any} */ (projects.find((x) => x.id === id));
-      if (p) { if (value === 'agy' || value === 'commandcode' || value === 'opencode') p.engine = value; else delete p.engine; changed(); }
+      if (p) { if (value === 'agy' || value === 'commandcode' || value === 'opencode' || value === 'codex') p.engine = value; else delete p.engine; changed(); }
       return { restarted: [] };
     },
     onChange: ev.projects.add,
@@ -337,6 +337,18 @@ window.agentOffice = {
     return {
       auth: async () => ({ ...auth }),
       login: async (mode) => { setTimeout(() => { const say = mode === 'auth' ? 'opencode auth login' : `opencode console ${mode || 'login'}`; ev.data.emit('login:oc', `${say} (mock)…\r\n`); ev.exit.emit('login:oc', 0); auth = mode === 'logout' ? { installed: true, state: 'out', major: 1 } : { installed: true, state: 'in', major: 1, providers: [{ id: 'openai', type: 'oauth' }] }; lis.emit({ ...auth }); }, 600); },
+      onAuth: (cb) => lis.add(cb),
+    };
+  })(),
+  // v3.56: Codex's single login (?cd=in|out|missing; default: installed, logged in, like a working `codex`)
+  cd: (() => {
+    const kind = q.get('cd') || 'in';
+    const base = kind === 'missing' ? { installed: false, state: 'missing' } : kind === 'out' ? { installed: true, state: 'out' } : { installed: true, state: 'in' };
+    let auth = base;
+    const lis = listeners();
+    return {
+      auth: async () => ({ ...auth }),
+      login: async (mode) => { setTimeout(() => { const say = mode === 'logout' ? 'codex logout' : 'codex login'; ev.data.emit('login:cd', `${say} (mock)…\r\n`); ev.exit.emit('login:cd', 0); auth = mode === 'logout' ? { installed: true, state: 'out' } : { installed: true, state: 'in' }; lis.emit({ ...auth }); }, 600); },
       onAuth: (cb) => lis.add(cb),
     };
   })(),

@@ -2,7 +2,7 @@
 // the sidebar renders EVERY control for every engine and disables the ones an engine can't honour, with a one-line
 // reason (the locale key `sidebar.na.<reason>`). Tested with node --test (app/test/engine-caps.test.mjs).
 
-export const ENGINES = ['claude', 'agy', 'commandcode', 'opencode'];
+export const ENGINES = ['claude', 'agy', 'commandcode', 'opencode', 'codex'];
 
 /** The features of a project row, in the order the sidebar shows them. */
 export const FEATURES = ['account', 'login', 'manager', 'bossModel', 'agentModel', 'contextCap', 'savings', 'backup', 'workers', 'approvals', 'cost', 'projectFiles', 'appMcp', 'skillPacks'];
@@ -39,6 +39,20 @@ const TABLE = {
     workers: no('ocWorkers'),
     cost: no('ocCost'),
     projectFiles: no('ocProjectFiles'),
+    appMcp: no('claudeOnlyMcp'),
+    skillPacks: no('claudeOnlySkills'),
+  },
+  // Codex (contract v3.56): observed from its terminal and its own rollout transcript (read-only); the boss model list is
+  // fixed for now (Auto passes nothing), the rest is the opencode rule.
+  codex: {
+    manager: no('cdManager'),
+    agentModel: no('cdAgentModel'),
+    contextCap: no('cdContextCap'),
+    savings: no('cdSavings'),
+    backup: no('cdBackup'),
+    workers: no('cdWorkers'),
+    cost: no('cdCost'),
+    projectFiles: no('cdProjectFiles'),
     appMcp: no('claudeOnlyMcp'),
     skillPacks: no('claudeOnlySkills'),
   },
@@ -80,6 +94,8 @@ export const BOSS_MODEL_CHOICES = {
     { value: 'claude-haiku-5-5', label: 'Haiku 5.5' }, { value: 'deepseek/deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
   ],
   opencode: [{ value: 'opencode/big-pickle', label: 'Big Pickle (free)' }], // v3.40: `-m provider/model`
+  // v3.56: Auto only for now — passing no -m keeps Codex's own default model; the list comes when choices are pinned.
+  codex: [],
 };
 
 /** The boss model choices of an engine. */

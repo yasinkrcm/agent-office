@@ -307,7 +307,7 @@ test('proje başına motor: normalizeState, setProjectEngine, engineOf (v3.22)',
   assert.equal('engine' in s.projects[1], false); // Claude Code (the default) is never written
   assert.equal('engine' in s.projects[2], false); // unknown values are dropped
   assert.equal(P.engineOf(null), 'claude');
-  assert.deepEqual(P.ENGINES, ['claude', 'agy', 'commandcode', 'opencode']);
+  assert.deepEqual(P.ENGINES, ['claude', 'agy', 'commandcode', 'opencode', 'codex']);
   assert.equal(P.setProjectEngine(s, 'a', 'agy'), s);
   assert.equal(P.setProjectEngine(s, 'zz', 'agy'), s);
   assert.equal(P.setProjectEngine(s, 'd', null), s);
@@ -677,7 +677,7 @@ test('Command Code sekmesi gözlemlenir: agy-watch engine commandcode, uyku { cm
   assert.equal(s.stats.today.log[0].description, 'Command Code');
   assert.deepEqual(Zm.wakeOptions({ cmd: true }, false), { resume: true });
   const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'main.js'), 'utf8');
-  assert.match(src, /asleep\.set\(id, isCmd\(r\.project\) \? \{ cmd: true \} : isOc\(r\.project\) \? \{ oc: true \} : \{ agy: true \}\)/);
+  assert.match(src, /asleep\.set\(id, isCmd\(r\.project\) \? \{ cmd: true \} : isOc\(r\.project\) \? \{ oc: true \} : isCd\(r\.project\) \? \{ cd: true \} : \{ agy: true \}\)/);
 });
 
 test('lastJsonObject: gürültü arasındaki son nesne, dizgedeki parantezler, iç içe nesneler', () => {
@@ -4314,3 +4314,75 @@ test('fixcloud (v3.54): addFixcloud settings.json base+model yazar, anahtarı ya
   // the session launch line re-exports the token after the rc files
   assert.match(src, /A\.FIXCLOUD_REEXPORT/);
 });
+
+// --- Codex motoru (contract v3.56)
+{
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const EN = require('../src/engine.js');
+  const CDA = require('../src/cd-auth.js');
+  const AWm = require('../src/agy-watch.js');
+
+  test('Codex motoru (v3.56): engine değeri, cdArgs, cdEnv izin listesi, başlatma satırı', () => {
+    assert.equal(P.engineOf({ engine: 'codex' }), 'codex');
+    assert.deepEqual(EN.cdArgs({ resume: true, prompt: 'go', model: 'gpt-5.1-codex-max' }), ['-m', 'gpt-5.1-codex-max', 'resume', '--last', 'go']);
+    assert.deepEqual(EN.cdArgs({ resume: true, prompt: 'go' }), ['resume', '--last', 'go']);
+    assert.deepEqual(EN.cdArgs({}), []);
+    assert.deepEqual(EN.cdArgs({ model: 'gpt-5.1-codex-max' }), ['-m', 'gpt-5.1-codex-max']);
+    const env = EN.cdEnv({ PATH: '/x', HOME: '/h', ANTHROPIC_API_KEY: 'x', AGENT_OFFICE_DIR: '/y', CLAUDE_CODE_SSE_PORT: '1', CODEX_HOME: '/c', MY_API_KEY: 'z', OPENAI_API_KEY: 'k', SHELL: '/zsh' });
+    assert.deepEqual(env, { PATH: '/x', HOME: '/h', CODEX_HOME: '/c', OPENAI_API_KEY: 'k', SHELL: '/zsh', TERM: 'xterm-256color', COLORTERM: 'truecolor' });
+    assert.match(EN.CD_COMMAND, /exec codex "\$@"$/);
+    for (const x of EN.cdArgs({ model: 'pro' })) assert.doesNotMatch(x, /plugin|settings|mcp|office|AGENT_OFFICE/i);
+    assert.deepEqual(P.bossModelArgs({ engine: 'codex', bossModel: 'pro' }), []); // not a codex model: Auto
+  });
+
+  test('Codex girişi (v3.56): durum yalnız PATH + auth.json varlığı; içerik okunmaz', () => {
+    assert.deepEqual(CDA.cdAuthState({ path: null }, '/h', () => true), { installed: false, state: 'missing' });
+    assert.deepEqual(CDA.cdAuthState({ path: '/c' }, '/h', () => false), { installed: true, state: 'out' });
+    assert.deepEqual(CDA.cdAuthState({ path: '/c' }, '/h', () => true), { installed: true, state: 'in' });
+    assert.equal(CDA.parseCdStatus('noise\n/x/codex\nnoise').path, '/x/codex');
+    assert.equal(CDA.parseCdStatus('').path, null);
+    assert.equal(CDA.cdAuthFile('/h'), '/h/.codex/auth.json');
+  });
+
+  test('Codex rollout (v3.56): en yeni kayıt klasörün cwd eşleşirse alınır; task_started sayılır', () => {
+    const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ao-cd-')));
+    const day = new Date();
+    const folder = path.join(home, '.codex', 'sessions', `${day.getFullYear()}`, String(day.getMonth() + 1).padStart(2, '0'), String(day.getDate()).padStart(2, '0'));
+    fs.mkdirSync(folder, { recursive: true });
+    const meta = (cwd, id) => JSON.stringify({ timestamp: '2026-10-28T22:33:58.993Z', type: 'session_meta', payload: { cwd, session_id: id } });
+    const mine = path.join(folder, 'rollout-2026-10-28T01-00-00-a.jsonl');
+    const other = path.join(folder, 'rollout-2026-10-28T02-00-00-b.jsonl');
+    fs.writeFileSync(mine, `${meta('/p1', 's1')}\n{"timestamp":"2026-10-28T22:34:00","ordinal":1,"type":"event_msg","payload":{"type":"task_started"}}\n{"timestamp":"2026-10-28T22:34:10","ordinal":2,"type":"event_msg","payload":{"type":"task_started"}}\n`);
+    fs.writeFileSync(other, `${meta('/p2', 's2')}\n`);
+    assert.deepEqual(AWm.codexTranscriptPath(home, '/p1'), mine);
+    assert.equal(AWm.codexTranscriptPath(home, '/nope'), null);
+    const got = AWm.readTranscript(mine, null, AWm.CD_PROMPT_RE);
+    assert.equal(got.prompts, 2);
+    assert.deepEqual(AWm.readTranscript(mine, got, AWm.CD_PROMPT_RE), { file: mine, size: got.size, prompts: 2 });
+    // bozuk meta: cwd yok
+    const bad = path.join(folder, 'rollout-2026-10-28T03-00-00-c.jsonl');
+    fs.writeFileSync(bad, '{"x":1}\n');
+    assert.equal(AWm.cdCwdOf(bad), null);
+    // meşgul çizgi ve onay diyaloğu
+    const w = AWm.createAgyWatch(1000, { engine: 'codex', label: 'Codex' });
+    w.output('⠹ Busy…', 1100);
+    assert.equal(w.isBusy, true);
+    w.output('Do you want to allow this? Yes, and don\'t ask again for commands that start with npm test', 1300);
+    assert.equal(w.waiting?.kind, 'permission');
+  });
+
+  test('startCodex (v3.56): serbest izolasyon; watcher engine codex; uyku { cd }; rollouts sayılır', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    const start = src.indexOf('function startCodex(');
+    assert.ok(start > 0);
+    const body = src.slice(start, src.indexOf('\n}\n', start)).replace(/\/\/.*$/gm, '');
+    assert.match(body, /const env = EN\.cdEnv\(process\.env\);/);
+    assert.match(body, /engine: 'codex', label: 'Codex'/);
+    for (const banned of ['sessionEnv', 'ptyEnv', 'officeDirectoryFile', 'AGENT_OFFICE_', 'sharedConfig', 'pluginDir', 'usageStatusLine', 'managerOf', 'savings', 'CLAUDE_', 'env.', 'env['])
+      assert.equal(body.includes(banned), false, `startCodex uses ${banned}`);
+    assert.match(src, /if \(isCd\(r\.project\)\) return startCodex\(id, r, \{ resume, prompt \}\);/);
+    assert.match(src, /isCd\(r\.project\) \? \{ cd: true \}/);
+    assert.match(src, /AW\.cdTranscriptPath|AW\.codexTranscriptPath\(home, dir, now\)/);
+    assert.match(src, /AW\.CD_PROMPT_RE/);
+  });
+}

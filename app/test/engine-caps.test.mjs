@@ -114,3 +114,19 @@ test('OpenCode in the sidebar (contract v3.36, v3.40): an Account entry, a read-
   assert.match(mock, /q\.has\('ocProject'\) && projects\[2\]\) \/\*\* @type \{any\} \*\/ \(projects\[2\]\)\.engine = 'opencode'/)
   for (const k of ['ocHint', 'ocHintTitle', 'engineOpencode', 'ocMissing', 'ocMissingTitle']) assert.equal(typeof en.sidebar[k], 'string', k)
 })
+
+test('Codex (contract v3.56): observed like OpenCode; boss model Auto only for now', () => {
+  assert.ok(ENGINES.includes('codex'))
+  const tr = JSON.parse(readFileSync(new URL('../locales/tr.json', import.meta.url), 'utf8'))
+  for (const projectFiles of [false, true]) {
+    for (const f of ['manager', 'agentModel', 'contextCap', 'savings', 'backup', 'workers', 'cost', 'projectFiles']) {
+      const c = cap('codex', f, { projectFiles })
+      assert.equal(c.ok, false, f); assert.match(c.reason, /^cd/)
+      assert.equal(typeof en.sidebar.na[c.reason], 'string'); assert.equal(typeof tr.sidebar.na[c.reason], 'string')
+    }
+  }
+  for (const f of ['account', 'login', 'bossModel', 'approvals']) assert.equal(cap('codex', f).ok, true, f)
+  assert.notDeepEqual(caps('codex'), caps('claude'))
+  assert.deepEqual(bossModelChoices('codex').map((c) => c.value), P.BOSS_MODELS_BY_ENGINE.codex) // []
+  assert.deepEqual(P.bossModelArgs({ engine: 'codex' }), []) // Auto passes nothing
+})
